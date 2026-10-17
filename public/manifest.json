@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Thread — Tab groups",
+  "version": "0.2.1",
+  "description": "On-device AI tab groups. Keep useful groups, reject the rest, and reorganize without closing your tabs.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "thread@tab-organizer.local",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": { "required": ["none"] }
+    }
+  },
+  "permissions": ["tabs", "tabGroups", "storage", "sessions"],
+  "optional_permissions": ["trialML"],
+  "optional_host_permissions": ["https://huggingface.co/*", "https://*.huggingface.co/*", "https://*.hf.co/*"],
+  "background": { "scripts": ["background.js"], "type": "module" },
+  "action": {
+    "default_title": "Organize tabs — Thread",
+    "default_popup": "popup.html",
+    "default_icon": "icons/thread.svg",
+    "theme_icons": [
+      { "light": "icons/thread-light.svg", "dark": "icons/thread-dark.svg", "size": 16 },
+      { "light": "icons/thread-light.svg", "dark": "icons/thread-dark.svg", "size": 32 }
+    ]
+  },
+  "icons": { "48": "icons/thread-48.png", "96": "icons/thread-96.png" },
+  "incognito": "not_allowed",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; worker-src 'self'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co; img-src 'self' data:; style-src 'self'"
+  }
+}

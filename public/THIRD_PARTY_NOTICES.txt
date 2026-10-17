@@ -1,0 +1,29 @@
+Thread includes software from:
+
+- Hugging Face Transformers.js — Apache License 2.0
+  https://github.com/huggingface/transformers.js
+- Hugging Face Tokenizers.js — Apache License 2.0
+  https://github.com/huggingface/tokenizers.js
+- Hugging Face Jinja — MIT License
+  https://github.com/huggingface/huggingface.js
+- Microsoft ONNX Runtime — MIT License
+  https://github.com/microsoft/onnxruntime
+
+License texts for these packages are included under licenses/ in the build.
+Additional bundled license comments are preserved in ai/worker.js.LEGAL.txt.
+
+Models are downloaded from their upstream hosts, not included in this package:
+
+- Xenova/all-MiniLM-L6-v2 — Apache License 2.0
+  Bundled-runtime revision 751bff37182d3f1213fa05d7196b954e230abad9
+  Firefox-native mirror: Xenova/all-MiniLM-L6-v2, revision v0.1.0
+  https://huggingface.co/Xenova/all-MiniLM-L6-v2
+  https://model-hub.mozilla.org/Xenova/all-MiniLM-L6-v2/v0.1.0/config.json
+  Mirror config, tokenizer, and q8 weights verified identical to the pinned revision.
+- Mozilla/smart-tab-topic — Mozilla Public License 2.0
+  Revision 91a6ebc0318de964b0e318c89ba01514746aadb8
+  https://huggingface.co/Mozilla/smart-tab-topic
+  Training/source: https://github.com/mozilla/smart-tab-grouping
+  License: https://www.mozilla.org/MPL/2.0/
+
+Model weights and upstream runtime code have not been modified by Thread.

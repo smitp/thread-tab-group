@@ -1,0 +1,21 @@
+{
+  "name": "thread-firefox",
+  "version": "0.2.1",
+  "license": "MIT",
+  "private": true,
+  "description": "Keep your train of thought. Private, on-device tab organization for Firefox.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && node scripts/build.mjs",
+    "dev": "node scripts/build.mjs --watch",
+    "package": "npm run build && node scripts/package.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "4.3.1"
+  },
+  "devDependencies": {
+    "@types/firefox-webext-browser": "143.0.1",
+    "esbuild": "0.28.2",
+    "typescript": "~5.9.3"
+  }
+}

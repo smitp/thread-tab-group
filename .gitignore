@@ -1,0 +1,10 @@
+node_modules/
+dist/
+artifacts/
+.DS_Store
+.playwright-mcp/
+.pi/
+.env
+.env.*
+!.env.example
+*.log
