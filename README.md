@@ -12,7 +12,7 @@ AI grouping is imperfect; uncertain tabs can stay loose, and generated names can
 
 [Reject and retry](docs/images/02-reject.png) · [On-device settings](docs/images/03-settings.png) · [Screenshot provenance](docs/images/README.md) · [Support / issues](https://github.com/smitp/thread-tab-group/issues)
 
-**Pre-release:** the Mozilla Add-ons listing remains a draft, not submitted or published. Build and load the unsigned extension temporarily using the instructions below.
+**Pre-release:** version 0.2.1 has been submitted to Mozilla Add-ons and is awaiting review. It is not yet published. Build and load the unsigned extension temporarily using the instructions below.
 
 ## Run it
 
