@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Thread — Tab groups",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "On-device AI tab groups. Keep useful groups, reject the rest, and reorganize without closing your tabs.",
   "browser_specific_settings": {
     "gecko": {

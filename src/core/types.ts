@@ -21,6 +21,8 @@ export interface Group {
   title: string;
   color: GroupColor;
   collapsed: boolean;
+  /** Browser-managed collaborative groups are never automatic destinations. */
+  protected?: boolean;
 }
 export interface Snapshot {
   windowId: number;
@@ -57,6 +59,9 @@ export interface UndoStep {
   afterKeys?: string[];
   collapsedBefore?: boolean;
   collapsedAfter?: boolean;
+  /** Written before creation; an interrupted new group may still be untitled. */
+  stylePending?: boolean;
+  pendingColor?: GroupColor;
 }
 export interface UndoRecord {
   id: string;
@@ -64,6 +69,9 @@ export interface UndoRecord {
   order: string[];
   steps: UndoStep[];
   at: number;
+  /** Durable progress through a resumable Undo, including the API/write gap. */
+  detachedKeys?: string[];
+  detachingKeys?: string[];
 }
 export interface RejectionRecord {
   threadId: string;
@@ -128,12 +136,22 @@ export interface View {
   canCancel?: boolean;
   error?: string;
 }
+export interface GroupGuard {
+  windowId: number;
+  groupId: number;
+  title?: string;
+  color?: GroupColor;
+  memberIds?: number[];
+  collapsed?: boolean;
+}
 export interface Platform {
+  readonly defaultGroupColor: GroupColor;
   snapshot(windowId: number): Promise<Snapshot>;
   group(windowId: number, tabIds: number[], existingGroup?: number): Promise<number>;
   styleGroup(id: number, title: string, color: GroupColor, collapsed: boolean): Promise<void>;
-  ungroup(ids: number[]): Promise<void>;
-  move(id: number, index: number): Promise<void>;
+  setCollapsed(collapsed: boolean, expected: GroupGuard): Promise<boolean>;
+  ungroup(ids: number[], expected: GroupGuard): Promise<boolean>;
+  move(id: number, index: number, windowId: number): Promise<void>;
   activate(tabId: number, groupId: number): Promise<void>;
 }
 export interface Repository {

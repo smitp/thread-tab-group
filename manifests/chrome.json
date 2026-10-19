@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Thread — AI Tab Groups",
+  "version": "0.3.0",
+  "description": "Group related tabs with on-device AI. Keep useful groups, reject the rest, and reorganize without closing your tabs.",
+  "minimum_chrome_version": "121",
+  "permissions": ["tabs", "tabGroups", "storage", "offscreen"],
+  "optional_host_permissions": ["https://huggingface.co/*", "https://*.huggingface.co/*", "https://*.hf.co/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": {
+    "default_title": "Organize tabs — Thread",
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icons/thread-16.png", "32": "icons/thread-32.png", "48": "icons/thread-48.png" }
+  },
+  "icons": { "16": "icons/thread-16.png", "32": "icons/thread-32.png", "48": "icons/thread-48.png", "128": "icons/thread-128.png" },
+  "incognito": "not_allowed",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; worker-src 'self'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co; img-src 'self' data:; style-src 'self'"
+  }
+}

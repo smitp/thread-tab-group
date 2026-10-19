@@ -4,6 +4,7 @@ import { HybridIntelligence } from './ai/hybrid';
 import { FirefoxEmbeddings } from './platform/firefox/intelligence';
 import { FirefoxPlatform } from './platform/firefox/browser';
 import { FirefoxRepository } from './platform/firefox/storage';
+import { dispatch } from './platform/requests';
 
 const platform = new FirefoxPlatform();
 const repository = new FirefoxRepository();
@@ -25,34 +26,10 @@ browser.runtime.onMessage.addListener((message, sender) => {
   return (async () => {
     try {
       if (typeof message.type !== 'string') throw new Error('Invalid request.');
-      const id = message.windowId;
-      if (message.type !== 'settings' && (!Number.isInteger(id) || id < 0)) throw new Error('No browser window selected.');
-      if (Number.isInteger(id)) {
+      const value = await dispatch(app, message, async id => {
         const win = await browser.windows.get(id);
         if (win.incognito || win.type !== 'normal') throw new Error('Thread only works in normal, non-private windows.');
-      }
-      let value: unknown;
-      switch (message.type) {
-        case 'view': value = await app.view(id); break;
-        case 'organize':
-          if (message.grouping !== undefined && !['balanced', 'focused', 'broad'].includes(message.grouping)) throw new Error('Unknown grouping style.');
-          await app.start(id, { retry: message.retry === true, grouping: message.grouping,
-            retryUndone: message.retryUndone === true, includeExcluded: message.includeExcluded === true }); break;
-        case 'cancel': app.cancel(); break;
-        case 'undo': await app.undo(id); break;
-        case 'reject':
-          if (typeof message.threadId !== 'string') throw new Error('No group selected.');
-          await app.reject(id, message.threadId); break;
-        case 'finish-rejection': await app.reject(id); break;
-        case 'resume':
-          if (typeof message.threadId !== 'string') throw new Error('No thread selected.');
-          await app.resume(id, message.threadId); break;
-        case 'settings':
-          if (typeof message.learn !== 'boolean') throw new Error('Invalid preference.');
-          await app.settings(message.learn, message.onboard === true); break;
-        case 'clear': await app.clearLearning(id, message.retryLoose === true); break;
-        default: throw new Error('Unknown action.');
-      }
+      });
       return { ok: true, value };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : 'Thread could not finish that action.' };

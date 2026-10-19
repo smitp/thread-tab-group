@@ -1,8 +1,9 @@
-import type { GroupColor, Platform, Snapshot, Tab } from '../../core/types';
+import type { GroupColor, GroupGuard, Platform, Snapshot, Tab } from '../../core/types';
 
 const TAB_KEY = 'thread.tab.v1';
 const WINDOW_KEY = 'thread.window.v1';
 export class FirefoxPlatform implements Platform {
+  readonly defaultGroupColor = 'blue' as const;
   private keys = new Map<number, Promise<string>>();
   private epochPromise = (async () => {
     const stored = (await browser.storage.session.get('threadEpoch')).threadEpoch;
@@ -48,7 +49,7 @@ export class FirefoxPlatform implements Platform {
     ]);
     const tabs: Tab[] = [];
     const seen = new Set<string>();
-    for (const tab of rawTabs) {
+    for (const tab of rawTabs.sort((a, b) => a.index - b.index)) {
       if (tab.id === undefined || tab.incognito) continue;
       try {
         let key = await this.tabKey(tab.id);
@@ -75,8 +76,33 @@ export class FirefoxPlatform implements Platform {
     if (collapsed) collapsed = !(await browser.tabs.query({ groupId: id })).some(t => t.active);
     await browser.tabGroups.update(id, { title, color, collapsed });
   }
-  async ungroup(ids: number[]) { if (ids.length) await browser.tabs.ungroup(ids); }
-  async move(id: number, index: number) { await browser.tabs.move(id, { index }); }
+  private async matches(expected: GroupGuard): Promise<boolean> {
+    const [group, members] = await Promise.all([browser.tabGroups.get(expected.groupId), browser.tabs.query({ groupId: expected.groupId })]);
+    return group.windowId === expected.windowId && (group.title ?? '') === expected.title && group.color === expected.color &&
+      (expected.collapsed === undefined || group.collapsed === expected.collapsed) && !!expected.memberIds &&
+      members.sort((a, b) => a.index - b.index).map(t => t.id).join('|') === expected.memberIds.join('|');
+  }
+  async setCollapsed(collapsed: boolean, expected: GroupGuard): Promise<boolean> {
+    if (!await this.matches(expected)) return false;
+    if (collapsed && (await browser.tabs.query({ groupId: expected.groupId })).some(t => t.active)) return false;
+    await browser.tabGroups.update(expected.groupId, { collapsed });
+    return true;
+  }
+  async ungroup(ids: number[], expected: GroupGuard): Promise<boolean> {
+    if (!ids.length) return true;
+    if (expected.groupId !== -1 && !await this.matches(expected)) return false;
+    const tabs = await Promise.all(ids.map(id => browser.tabs.get(id)));
+    if (tabs.some(t => t.windowId !== expected.windowId || t.incognito || (t.groupId ?? -1) !== expected.groupId || t.pinned || t.hidden || t.audible ||
+      t.sharingState?.camera || t.sharingState?.microphone || t.sharingState?.screen)) return false;
+    if (expected.groupId !== -1) await browser.tabs.ungroup(ids);
+    return true;
+  }
+  async move(id: number, index: number, windowId: number) {
+    const tab = await browser.tabs.get(id);
+    if (tab.windowId !== windowId || tab.incognito || (tab.groupId ?? -1) !== -1 || tab.pinned || tab.hidden || tab.audible ||
+      tab.sharingState?.camera || tab.sharingState?.microphone || tab.sharingState?.screen) throw new Error('This tab changed during Undo. It was left in place.');
+    await browser.tabs.move(id, { index });
+  }
   async activate(tabId: number, groupId: number) {
     const tab = await browser.tabs.get(tabId);
     if (tab.incognito) throw new Error('Private tabs are not available.');

@@ -50,7 +50,10 @@ p { margin: 0 0 12px; }
 .excluded-action { margin-top: 12px; }
 .excluded-action small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
 .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-.primary { background: AccentColor; color: AccentColorText; border: 1px solid AccentColor; border-radius: 4px; font-weight: 600; }
+.primary { background: ButtonFace; color: ButtonText; border: 1px solid ButtonBorder; border-radius: 4px; font-weight: 600; }
+@supports (background: AccentColor) {
+  .primary { background: AccentColor; color: AccentColorText; border-color: AccentColor; }
+}
 .primary:hover:not(:disabled) { filter: brightness(.94); }
 .welcome .actions { flex-direction: column; }
 .progress { margin: 8px 0 12px; }

@@ -1,8 +1,25 @@
+import type { Presentation } from '../presentation';
+import type { NativeAccess } from '../presentation';
+export type { NativeAccess } from '../presentation';
+
+export const presentation: Presentation = {
+  nativeButton: 'Enable Firefox AI (optional)',
+  nativeAllowed: 'Firefox AI permission is enabled. The local fallback remains available. You can revoke permission in Firefox’s extension settings.',
+  nativeUnavailable: 'Firefox AI is unavailable in this Firefox/add-on configuration. The bundled local AI is available without it.',
+  nativeDeclined: 'Firefox AI wasn’t enabled. You can continue using the bundled local AI.',
+  onboardingAI: 'Firefox’s AI is optional. When unavailable, the same local model runs inside the extension. No account or cloud AI is needed.',
+  download: 'The first run may download about 85 MB of models from Mozilla and Hugging Face, plus Firefox’s runtime. They receive model requests, not your tabs.',
+  settingsAI: 'Prefer Firefox’s runtime when available. Otherwise, use the bundled local runtime with the same model. No Nightly requirement or cloud fallback.',
+  runtimePrivacy: 'Firefox’s native runtime follows Firefox’s own diagnostic settings.',
+  identityPrivacy: 'Firefox’s session permission provides stable tab identities. The optional AI permission can be declined or revoked without disabling the bundled local runtime.',
+  protections: 'Pinned, hidden, and playing/sharing tabs are always protected.',
+  permissionError: 'Allow the model download hosts to use on-device AI. Firefox AI permission is not required.',
+};
+
 export const MODEL_ORIGINS = ['https://huggingface.co/*', 'https://*.huggingface.co/*', 'https://*.hf.co/*'];
 // Firefox's trial_ml.json declares this optional permission. The external
 // WebExtension typings omit experimental permissions and the trial namespace.
 const NATIVE_PERMISSION = 'trialML' as browser._manifest.OptionalPermission;
-export type NativeAccess = 'available' | 'allowed' | 'unavailable';
 function declaresNative(): boolean {
   // Inspect the loaded manifest, not the file on disk: a temporary add-on can
   // still have an older manifest, or Firefox can omit an unsupported permission.
@@ -32,6 +49,9 @@ export const client = {
     }
     if (!result?.ok) throw new Error(result?.error ?? 'Thread could not connect. Reload the extension and try again.');
     return result.value as T;
+  },
+  modelsAllowed(): Promise<boolean> {
+    return browser.permissions.contains({ origins: MODEL_ORIGINS }).catch(() => false);
   },
   requestModels(): Promise<boolean> {
     // trialML is OptionalOnlyPermission: Firefox rejects combining it with

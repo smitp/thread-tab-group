@@ -1,19 +1,25 @@
 {
   "name": "thread-firefox",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "license": "MIT",
   "private": true,
-  "description": "Keep your train of thought. Private, on-device tab organization for Firefox.",
+  "description": "Private, on-device AI tab grouping for Firefox and Chrome.",
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit && node scripts/build.mjs",
+    "build:chrome": "tsc --noEmit && node scripts/build.mjs --browser=chrome",
+    "build:all": "npm run build && npm run build:chrome",
     "dev": "node scripts/build.mjs --watch",
-    "package": "npm run build && node scripts/package.mjs"
+    "dev:chrome": "node scripts/build.mjs --browser=chrome --watch",
+    "package": "npm run build && node scripts/package.mjs",
+    "package:chrome": "npm run build:chrome && node scripts/package.mjs --browser=chrome",
+    "package:all": "npm run build:all && node scripts/package.mjs --browser=all"
   },
   "dependencies": {
     "@huggingface/transformers": "4.3.1"
   },
   "devDependencies": {
+    "@types/chrome": "0.3.5",
     "@types/firefox-webext-browser": "143.0.1",
     "esbuild": "0.28.2",
     "typescript": "~5.9.3"

@@ -1,4 +1,4 @@
-import { env, pipeline, LogLevel, type FeatureExtractionPipeline, type Text2TextGenerationPipeline } from '@huggingface/transformers';
+import { env, LogLevel, BertTokenizer, T5Tokenizer, AutoModel, AutoModelForSeq2SeqLM, FeatureExtractionPipeline, Text2TextGenerationPipeline } from '@huggingface/transformers';
 import { EMBEDDING_MODEL, EMBEDDING_REVISION, LABEL_MODEL, LABEL_REVISION } from './models';
 
 env.allowLocalModels = false;
@@ -15,6 +15,24 @@ env.backends.onnx.wasm!.wasmPaths = {
 // All executable runtime code is packaged; only pinned model/data files are remote.
 const realFetch = globalThis.fetch.bind(globalThis);
 env.fetch = (input, init) => realFetch(input, { ...init, credentials: 'omit', referrerPolicy: 'no-referrer' });
+
+// AutoTokenizer's file-discovery helper probes `main` without forwarding the
+// requested revision. These two pinned models have known tokenizer classes;
+// load their exact JSON files instead, including when the network is offline.
+async function tokenizerFiles(model: string, revision: string): Promise<[Record<string, unknown>, Record<string, unknown>]> {
+  let cache: Cache | undefined;
+  try { cache = await caches.open('thread-models-v1'); } catch { /* Online inference can still work if caching is unavailable. */ }
+  const files = await Promise.all(['tokenizer.json', 'tokenizer_config.json'].map(async file => {
+    const url = `https://huggingface.co/${model}/resolve/${revision}/${file}`;
+    const saved = await cache?.match(url);
+    if (saved) return saved.json();
+    const response = await env.fetch!(url);
+    if (!response.ok) throw new Error('The pinned tokenizer could not be downloaded.');
+    if (cache) try { await cache.put(url, response.clone()); } catch { /* Do not fail an otherwise usable model because the disk cache is full. */ }
+    return response.json();
+  }));
+  return files as [Record<string, unknown>, Record<string, unknown>];
+}
 
 let embedder: FeatureExtractionPipeline | undefined;
 let labeler: Text2TextGenerationPipeline | undefined;
@@ -33,9 +51,13 @@ self.onmessage = async (event: MessageEvent<Request>) => {
     if (event.data.task === 'embed') {
       if (!embedder) {
         progress('Preparing on-device AI', 'The first run downloads the semantic model. No tab data is sent.');
-        embedder = await pipeline('feature-extraction', EMBEDDING_MODEL, {
-          revision: EMBEDDING_REVISION, dtype: 'q8', device: 'wasm', progress_callback: download,
-        });
+        // Construct the public pipeline directly: the generic pipeline()
+        // helper also probes unpinned `main` metadata, even with revision set.
+        const options = { revision: EMBEDDING_REVISION, dtype: 'q8' as const, device: 'wasm' as const, progress_callback: download };
+        const [model, [json, config]] = await Promise.all([
+          AutoModel.from_pretrained(EMBEDDING_MODEL, options), tokenizerFiles(EMBEDDING_MODEL, EMBEDDING_REVISION),
+        ]);
+        embedder = new FeatureExtractionPipeline({ task: 'feature-extraction', model, tokenizer: new BertTokenizer(json, config) });
       }
       const texts = event.data.inputs;
       const result: number[][] = [];
@@ -56,9 +78,11 @@ self.onmessage = async (event: MessageEvent<Request>) => {
     } else {
       if (!labeler) {
         progress('Preparing group names', 'Loading the small naming model. It is saved for next time.');
-        labeler = await pipeline('text2text-generation', LABEL_MODEL, {
-          revision: LABEL_REVISION, dtype: 'q8', device: 'wasm', progress_callback: download,
-        });
+        const options = { revision: LABEL_REVISION, dtype: 'q8' as const, device: 'wasm' as const, progress_callback: download };
+        const [model, [json, config]] = await Promise.all([
+          AutoModelForSeq2SeqLM.from_pretrained(LABEL_MODEL, options), tokenizerFiles(LABEL_MODEL, LABEL_REVISION),
+        ]);
+        labeler = new Text2TextGenerationPipeline({ task: 'text2text-generation', model, tokenizer: new T5Tokenizer(json, config) });
       }
       const result: string[] = [];
       for (const input of event.data.inputs) {
@@ -71,6 +95,6 @@ self.onmessage = async (event: MessageEvent<Request>) => {
     }
   } catch {
     // Do not serialize model errors containing page inputs into storage or logs.
-    self.postMessage({ id, error: 'The local AI could not finish. Check your connection for the first download, then try again. No cloud fallback was used.' });
+    self.postMessage({ id, error: 'The local AI could not finish. Check model download access in Settings and your connection for the first download, then try again. No cloud fallback was used.' });
   }
 };

@@ -65,7 +65,7 @@ export class ThreadApp {
       .flatMap(thread => {
       const tabs = snapshot.tabs.filter(t => t.groupId === thread.groupId && thread.keys.includes(t.key));
       if (!tabs.length) return [];
-      const last = [...tabs].sort((a, b) => b.lastAccessed - a.lastAccessed)[0];
+      const last = [...tabs].sort((a, b) => Number(b.active) - Number(a.active) || b.lastAccessed - a.lastAccessed)[0];
       return [{ id: thread.id, title: snapshot.groups.find(g => g.id === thread.groupId)?.title || thread.title || 'Untitled group',
         color: thread.color, count: tabs.length, lastTitle: last.title || 'Untitled page', active: tabs.some(t => t.active),
         canReject: !this.busy && !memory?.pendingRejection && !memory?.receipt?.needsRecovery && thread.origin !== 'user' &&
@@ -148,7 +148,7 @@ export class ThreadApp {
       }
       if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
       this.applying = true;
-      this.setProgress({ stage: 'Organizing tabs', detail: 'Saving Undo before updating Firefox tab groups.' });
+      this.setProgress({ stage: 'Organizing tabs', detail: 'Saving Undo before updating native tab groups.' });
       const undo: UndoRecord = { id: crypto.randomUUID(), epoch: snapshot.epoch, order: snapshot.tabs.map(t => t.key), steps: [], at: Date.now() };
       const alreadyApplied = new Set<string>();
       for (const group of groups) {
@@ -165,7 +165,7 @@ export class ThreadApp {
         if (selected.length < (existing ? 1 : 2) || new Set(selected.map(t => t.container)).size !== 1) { changedDuringApply = true; continue; }
         const target = existing ? fresh.groups.find(g => g.id === existing.groupId) : undefined;
         const beforeMembers = existing ? fresh.tabs.filter(t => t.groupId === existing.groupId) : [];
-        if (existing && (!target || target.title !== existing.title || beforeMembers.length !== existing.keys.length ||
+        if (existing && (!target || target.protected || target.title !== existing.title || beforeMembers.length !== existing.keys.length ||
           beforeMembers.some(t => !existing.keys.includes(t.key) || t.hidden || t.container !== selected[0].container ||
             snapshot!.tabs.find(before => before.key === t.key)?.url !== t.url ||
             snapshot!.tabs.find(before => before.key === t.key)?.title !== t.title))) { changedDuringApply = true; continue; }
@@ -173,7 +173,7 @@ export class ThreadApp {
         const threadId = existing?.id ?? crypto.randomUUID();
         const title = target ? target.title : group.title || 'Related pages';
         const color = target?.color ?? colors[(threads.length + undo.steps.length) % colors.length];
-        const step = { threadId, created: !existing, title, color, addedKeys: selected.map(t => t.key),
+        const step = { threadId, created: !existing, stylePending: !existing, pendingColor: this.platform.defaultGroupColor, title, color, addedKeys: selected.map(t => t.key),
           beforeKeys: beforeMembers.map(t => t.key), collapsedBefore: target?.collapsed };
         undo.steps.push(step);
         await this.repo.update(s => {
@@ -185,7 +185,15 @@ export class ThreadApp {
         undo.steps[undo.steps.length - 1].groupId = groupId;
         await this.repo.update(s => { s.windows[snapshot!.windowKey].undo = structuredClone(undo); });
         if (!existing) await this.platform.styleGroup(groupId, title, color, !selected.some(t => t.active));
-        else if (target!.collapsed && selected.some(t => t.active)) await this.platform.styleGroup(groupId, title, color, false);
+        else if (target!.collapsed && selected.some(t => t.active)) {
+          const live = await this.platform.snapshot(windowId);
+          const group = live.groups.find(g => g.id === groupId);
+          if (group && group.title === title && group.color === color) await this.platform.setCollapsed(false, {
+            windowId, groupId, title, color, collapsed: group.collapsed,
+            memberIds: live.tabs.filter(t => t.groupId === groupId).map(t => t.id),
+          });
+        }
+        undo.steps[undo.steps.length - 1].stylePending = false;
         const after = await this.platform.snapshot(windowId);
         const keys = after.tabs.filter(t => t.groupId === groupId).map(t => t.key);
         undo.steps[undo.steps.length - 1].afterKeys = keys;
@@ -226,9 +234,9 @@ export class ThreadApp {
       const finalSignature = await fingerprint(final, finalMemory.ignored, state.settings.learn ? state.links : [], grouping, finalMemory.rejectedGroups);
       const noChange = changedDuringApply ? 'Tabs changed during analysis. They were left in place; you can try again.' :
         available && finalMemory.rejectedGroups?.length ? available + (available === 1 ? ' tab was' : ' tabs were') +
-          ' left ungrouped. Earlier rejected combinations are kept apart. You can group these tabs manually in Firefox.' :
-        available === 1 ? 'No confident existing-group match for this tab. Leave it loose or add it to a group in Firefox.' :
-        available ? 'No confident matches for ' + available + ' ungrouped tabs. Try a different grouping style or group them in Firefox.' :
+          ' left ungrouped. Earlier rejected combinations are kept apart. You can group these tabs manually in your browser.' :
+        available === 1 ? 'No confident existing-group match for this tab. Leave it loose or add it to a group in your browser.' :
+        available ? 'No confident matches for ' + available + ' ungrouped tabs. Try a different grouping style or group them in your browser.' :
         excluded ? excluded + (excluded === 1 ? ' tab is excluded.' : ' tabs are excluded.') + ' Include excluded tabs to reconsider them.' :
         final.groups.length ? 'No eligible ungrouped tabs. Existing groups are kept as they are.' :
         'No eligible tabs to organize. Open related web pages to get started.';
@@ -262,7 +270,8 @@ export class ThreadApp {
     const state = await this.repo.read();
     const thread = state.threads.find(t => t.id === threadId && t.windowKey === snapshot.windowKey);
     if (!thread) throw new Error('This thread has changed. Reopen Thread to refresh it.');
-    const last = snapshot.tabs.filter(t => t.groupId === thread.groupId && !t.hidden).sort((a, b) => b.lastAccessed - a.lastAccessed)[0];
+    const last = snapshot.tabs.filter(t => t.groupId === thread.groupId && !t.hidden)
+      .sort((a, b) => Number(b.active) - Number(a.active) || b.lastAccessed - a.lastAccessed)[0];
     if (last) {
       this.ignoreActivityUntil = Date.now() + 1500;
       await this.platform.activate(last.id, thread.groupId);
@@ -314,7 +323,8 @@ export class ThreadApp {
       const members = current.tabs.filter(t => t.groupId === group?.id);
       if (group && members.length && group.title === journal.title && group.color === journal.color &&
         members.every(t => journal.keys.includes(t.key) && eligible(t)) && remaining.every(t => t.groupId === -1 || t.groupId === group.id)) {
-        await this.platform.ungroup(members.map(t => t.id));
+        await this.platform.ungroup(members.map(t => t.id), { windowId, groupId: group.id, title: group.title, color: group.color,
+          memberIds: members.map(t => t.id) });
       }
       const final = await this.platform.snapshot(windowId);
       const released = final.tabs.filter(t => journal.keys.includes(t.key) && t.groupId === -1 && eligible(t)).map(t => t.key);
@@ -363,14 +373,30 @@ export class ThreadApp {
       const record = state.windows[snapshot.windowKey]?.undo;
       if (!record || state.windows[snapshot.windowKey]?.pendingRejection) return;
       await this.repo.update(s => { s.job = { windowKey: snapshot!.windowKey, windowId, phase: 'undo' }; });
-      const restored: string[] = [];
+      const saveProgress = () => this.repo.update(s => { s.windows[snapshot!.windowKey].undo = structuredClone(record); });
+      // Resume a detachment that completed before the worker could save its
+      // result. Only surviving loose tabs qualify; newer manual groups win.
+      const restored = [...new Set([...(record.detachedKeys ?? []), ...(record.detachingKeys ?? [])])].filter(key =>
+        snapshot!.tabs.some(t => t.key === key && t.groupId === -1 && eligible(t)));
+      record.detachedKeys = restored; delete record.detachingKeys;
+      await saveProgress();
+      const restoreCollapse = async (step: UndoRecord['steps'][number]) => {
+        if (step.created || step.collapsedBefore === undefined || step.collapsedBefore === step.collapsedAfter) return;
+        const current = await this.platform.snapshot(windowId);
+        const before = step.beforeKeys.filter(key => current.tabs.some(t => t.key === key));
+        const group = current.groups.find(g => (record.epoch !== current.epoch || step.groupId === undefined || g.id === step.groupId) &&
+          g.title === step.title && g.color === step.color && g.collapsed === step.collapsedAfter && !g.protected &&
+          current.tabs.filter(t => t.groupId === g.id).map(t => t.key).join('|') === before.join('|'));
+        if (group) await this.platform.setCollapsed(step.collapsedBefore, { windowId, groupId: group.id, title: group.title,
+          color: group.color, collapsed: step.collapsedAfter, memberIds: current.tabs.filter(t => t.groupId === group.id).map(t => t.id) });
+      };
       let skipped = 0;
       for (const step of [...record.steps].reverse()) {
         let current = await this.platform.snapshot(windowId);
         const present = new Set(current.tabs.map(t => t.key));
-        const expected = (step.afterKeys ?? [...step.beforeKeys, ...step.addedKeys]).filter(k => present.has(k));
-        const added = step.addedKeys.filter(k => present.has(k));
-        if (!added.length) continue;
+        const expected = (step.afterKeys ?? [...step.beforeKeys, ...step.addedKeys]).filter(k => present.has(k) && !restored.includes(k));
+        const added = step.addedKeys.filter(k => present.has(k) && !restored.includes(k));
+        if (!added.length) { await restoreCollapse(step); continue; }
         let group = record.epoch === current.epoch ? current.groups.find(g => g.id === step.groupId) : undefined;
         if (!group && (record.epoch !== current.epoch || step.groupId === undefined)) {
           group = current.groups.find(g => {
@@ -381,18 +407,24 @@ export class ThreadApp {
         const members = current.tabs.filter(t => t.groupId === group?.id);
         const exact = step.afterKeys ? members.map(t => t.key).join('|') === expected.join('|') :
           members.length === expected.length && members.every(t => expected.includes(t.key));
-        if (!group || !exact || (step.created && (group.title !== step.title || group.color !== step.color)) || members.some(t => added.includes(t.key) && !eligible(t))) {
+        // A crash can land between native creation and applying our label.
+        // Accept only the exact-membership, untouched default group (or the
+        // intended style if that API already completed). Renames stay protected.
+        const pendingDefault = step.stylePending && group?.title === '' && group.color === step.pendingColor;
+        if (!group || !exact || group.protected || (step.created && !pendingDefault && (group.title !== step.title || group.color !== step.color)) || members.some(t => added.includes(t.key) && !eligible(t))) {
           skipped += added.length; continue;
         }
-        await this.platform.ungroup(members.filter(t => added.includes(t.key)).map(t => t.id));
-        restored.push(...added);
-        if (!step.created && step.collapsedBefore !== undefined && step.collapsedBefore !== step.collapsedAfter) {
-          const latest = await this.platform.snapshot(windowId);
-          const liveGroup = latest.groups.find(g => g.id === group!.id);
-          if (liveGroup && liveGroup.collapsed === step.collapsedAfter) {
-            await this.platform.styleGroup(liveGroup.id, liveGroup.title, liveGroup.color, step.collapsedBefore);
-          }
-        }
+        record.detachingKeys = added;
+        await saveProgress();
+        const detached = await this.platform.ungroup(members.filter(t => added.includes(t.key)).map(t => t.id), {
+          windowId, groupId: group.id, title: group.title, color: group.color, memberIds: members.map(t => t.id),
+        });
+        if (detached) restored.push(...added);
+        else skipped += added.length;
+        record.detachedKeys = [...restored]; delete record.detachingKeys;
+        await saveProgress();
+        if (!detached) continue;
+        await restoreCollapse(step);
       }
       // Detach all safe additions before restoring order. A tab in a different
       // undo step is not a stable position anchor until that step is detached.
@@ -408,8 +440,8 @@ export class ThreadApp {
         // Never insert in the middle of someone else's native group.
         if (next && next.groupId !== -1) target = Math.min(...current.tabs.filter(t => t.groupId === next.groupId).map(t => t.index));
         if (target > tab.index) target--;
-        await this.platform.move(tab.id, target);
-        await this.platform.ungroup([tab.id]);
+        await this.platform.move(tab.id, target, windowId);
+        await this.platform.ungroup([tab.id], { windowId, groupId: -1 });
       }
       const final = await this.platform.snapshot(windowId);
       await this.repo.update(s => {

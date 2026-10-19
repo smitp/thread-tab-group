@@ -49,7 +49,7 @@ export function groupPreferences(snapshot: Snapshot, threads: Thread[]): GroupPr
     const all = snapshot.tabs.filter(t => t.groupId === thread.groupId);
     // Never append into hidden or mixed-container groups. Reading reference
     // titles does not move playing/sharing tabs that are already in a group.
-    if (!all.length || all.some(t => t.hidden) || new Set(all.map(t => t.container)).size !== 1 ||
+    if (!all.length || snapshot.groups.find(g => g.id === thread.groupId)?.protected || all.some(t => t.hidden) || new Set(all.map(t => t.container)).size !== 1 ||
       (thread.origin === 'user' && workflow(thread.title))) return [];
     const members = all.filter(t => /^https?:\/\//.test(t.url));
     if (!members.length) return [];

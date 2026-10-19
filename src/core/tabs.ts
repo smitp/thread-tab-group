@@ -72,9 +72,14 @@ export function reconcile(state: AppState, snapshot: Snapshot): Thread[] {
     memory.retryKeys = memory.retryKeys?.filter(k => k !== key);
     memory.regroupKeys = memory.regroupKeys?.filter(k => k !== key);
   };
+  const undoReleased = new Set([...(memory.undo?.detachedKeys ?? []), ...(memory.undo?.detachingKeys ?? [])]
+    .filter(key => snapshot.tabs.some(t => t.key === key && t.groupId === -1)));
   const used = new Set<number>();
   const result: Thread[] = [];
-  for (const saved of state.threads.filter(t => t.windowKey === snapshot.windowKey)) {
+  for (const stored of state.threads.filter(t => t.windowKey === snapshot.windowKey)) {
+    // A recovery popup may observe our own already-journaled Undo detachment.
+    // Do not permanently reclassify its surviving AI group as user-corrected.
+    const saved = { ...stored, keys: stored.keys.filter(key => !undoReleased.has(key)) };
     let group = snapshot.groups.find(g => g.id === saved.groupId &&
       snapshot.tabs.some(t => t.groupId === g.id && saved.keys.includes(t.key)));
     if (saved.epoch !== snapshot.epoch) {

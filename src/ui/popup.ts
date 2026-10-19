@@ -1,5 +1,5 @@
 import type { GroupingStyle, View } from '../core/types';
-import { client, type NativeAccess } from '../platform/firefox/client';
+import { client, presentation, type NativeAccess } from '@platform/client';
 
 const root = document.querySelector<HTMLDivElement>('#app')!;
 let windowId: number;
@@ -12,6 +12,7 @@ let refreshAgain = false;
 let autoStarted = false;
 let nativeAccess: NativeAccess = 'unavailable';
 let nativeNote = '';
+let modelsAllowed = true;
 let groupingChoice: GroupingStyle | undefined;
 const escape = (value: string) => value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 const tabCount = (n: number, kind = '') => n + ' ' + kind + (n === 1 ? 'tab' : 'tabs');
@@ -19,9 +20,9 @@ const busy = () => !!view?.progress || !!view?.otherWindowBusy || submitting;
 
 function nativeControl() {
   const note = nativeNote || (nativeAccess === 'allowed'
-    ? 'Firefox AI permission is enabled. The local fallback remains available. You can revoke permission in Firefox’s extension settings.'
-    : nativeAccess === 'unavailable' ? 'Firefox AI is unavailable in this Firefox/add-on configuration. The bundled local AI is available without it.' : '');
-  return (nativeAccess === 'available' ? '<button id="native-ai"' + (busy() ? ' disabled' : '') + '>Enable Firefox AI (optional)</button>' : '') +
+    ? presentation.nativeAllowed
+    : nativeAccess === 'unavailable' ? presentation.nativeUnavailable : '');
+  return (nativeAccess === 'available' ? '<button id="native-ai"' + (busy() ? ' disabled' : '') + '>' + escape(presentation.nativeButton) + '</button>' : '') +
     (note ? '<p class="setting-note" role="status">' + escape(note) + '</p>' : '');
 }
 function header() {
@@ -39,8 +40,8 @@ function render() {
   else if (!view.settings.onboarded) {
     content = '<main class="welcome">' +
       '<p>Organize related tabs in this window using on-device AI. Your existing groups guide new matches. No tabs are closed, and changes can be undone.</p>' +
-      '<p class="disclosure">Firefox’s AI is optional. When unavailable, the same local model runs inside the extension. No account or cloud AI is needed.</p>' +
-      '<p class="disclosure">The first run may download about 85 MB of models from Mozilla and Hugging Face, plus Firefox’s runtime. They receive model requests, not your tabs.</p>' +
+      '<p class="disclosure">' + escape(presentation.onboardingAI) + '</p>' +
+      '<p class="disclosure">' + escape(presentation.download) + '</p>' +
       '<p class="disclosure">Titles, group names, and addresses are processed locally. Page contents and browsing history aren’t read.</p>' +
       '<label class="check-row"><input id="learn-optin" type="checkbox"><span><strong>Learn from tab activity</strong><small>Optional. Store local tab connections for up to 7 days. Clear them at any time.</small></span></label>' +
       '<div class="actions"><button id="onboard" class="primary"' + (submitting ? ' disabled' : '') + '>Organize tabs</button>' + nativeControl() + '</div></main>';
@@ -50,11 +51,11 @@ function render() {
       '><span><strong>Learn from tab activity</strong><small>Keep up to 500 local tab connections for 7 days. No activity timeline or automatic rearranging.</small></span></label>' +
       '<button id="clear" class="setting-action"' + (busy() ? ' disabled' : '') + '><span>Clear learned connections<small>Keep groups and manual corrections.</small></span></button></section>' +
 
-      '<section class="settings-section"><h2>On-device AI</h2><p class="setting-note">Prefer Firefox’s runtime when available. Otherwise, use the bundled local runtime with the same model. No Nightly requirement or cloud fallback.</p>' +
-      nativeControl() + '</section>' +
-      '<details id="privacy"' + (privacyOpen ? ' open' : '') + '><summary>Privacy and data</summary><p>Titles, group names, and addresses stay on this device. No page contents, cookies, closed-tab history, or private windows are read. Thread sends no analytics. Firefox’s native runtime follows Firefox’s own diagnostic settings.</p>' +
+      '<section class="settings-section"><h2>On-device AI</h2><p class="setting-note">' + escape(presentation.settingsAI) + '</p>' +
+      nativeControl() + (!modelsAllowed ? '<button id="model-downloads"' + (busy() ? ' disabled' : '') + '>Allow model downloads</button><p class="setting-note">Restore download access if a model is missing. Your groups and settings are kept.</p>' : '') + '</section>' +
+      '<details id="privacy"' + (privacyOpen ? ' open' : '') + '><summary>Privacy and data</summary><p>Titles, group names, and addresses are processed locally. No page contents, cookies, closed-tab history, or private windows are read. Thread sends no analytics. ' + escape(presentation.runtimePrivacy) + '</p>' +
       '<p>Existing groups guide new matches even with activity learning off. Preferences are inferred from open tabs, not a stored browsing profile. Group identities, membership, corrections, and Undo are kept locally. Rejected combinations use only opaque tab identities, with up to 50 remembered per window. Closing a member or manually regrouping the combination clears that feedback when observed.</p>' +
-      '<p>Firefox’s session permission provides stable tab identities. The optional AI permission can be declined or revoked without disabling the bundled local runtime.</p></details>' +
+      '<p>' + escape(presentation.identityPrivacy) + '</p></details>' +
       '<p class="extension-note">Thread · On-device tab organization</p></main>';
   } else {
     const progress = view.progress;
@@ -94,8 +95,8 @@ function render() {
     }
     if (ready && view.canUndo) content += '<p class="setting-note feedback-hint">' + (view.threads.some(t => t.canReject)
       ? 'Keep the useful groups. Reject an unwanted group, then organize the ungrouped tabs again.'
-      : 'Use Undo for the last run, or move tabs with Firefox’s own controls.') + '</p>';
-    else if (ready && !view.loose) content += '<p class="setting-note feedback-hint">Pinned, hidden, and playing/sharing tabs are always protected.</p>';
+      : 'Use Undo for the last run, or move tabs with your browser’s own controls.') + '</p>';
+    else if (ready && !view.loose) content += '<p class="setting-note feedback-hint">' + escape(presentation.protections) + '</p>';
     content += '<div class="actions">' +
       (ready && view.canRecoverRejection ? '<button id="finish-rejection" class="primary"' + (busy() ? ' disabled' : '') + '>Finish rejection</button>' : '') +
       (view.canUndo ? '<button id="undo"' + (busy() ? ' disabled' : '') + '>Undo</button>' : '') +
@@ -115,6 +116,7 @@ async function refresh() {
   refreshPending = true;
   try {
     view = await client.send<View>('view', windowId);
+    modelsAllowed = await client.modelsAllowed();
     render();
   } catch (e) { error = e instanceof Error ? e.message : 'Could not connect to Thread.'; render(); }
   finally {
@@ -137,18 +139,26 @@ function bind() {
     // Start the browser permission request synchronously in the user gesture.
     const permission = client.requestModels();
     void act(async () => {
-      if (!await permission) throw new Error('Allow the model download hosts to use on-device AI. Firefox AI permission is not required.');
+      if (!await permission) throw new Error(presentation.permissionError);
+      modelsAllowed = true;
       nativeAccess = await client.nativeStatus();
       await client.send('settings', windowId, { learn, onboard: true });
       autoStarted = true;
       await client.send('organize', windowId);
     });
   });
+  click('model-downloads', () => {
+    const permission = client.requestModels();
+    void act(async () => {
+      modelsAllowed = await permission;
+      if (!modelsAllowed) throw new Error(presentation.permissionError);
+    });
+  });
   click('native-ai', () => {
     const permission = client.requestNative();
     void act(async () => {
       nativeAccess = await permission;
-      nativeNote = nativeAccess === 'available' ? 'Firefox AI wasn’t enabled. You can continue using the bundled local AI.' : '';
+      nativeNote = nativeAccess === 'available' ? presentation.nativeDeclined : '';
     });
   });
   click('organize', () => { void act(() => client.send('organize', windowId, {
